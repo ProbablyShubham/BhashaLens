@@ -1,0 +1,1514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="BhashaLens OCR is a private, client-side multilingual PDF and DOCX to TXT extractor for English and Indian regional languages." />
+  <meta property="og:title" content="BhashaLens OCR" />
+  <meta property="og:description" content="Parse multilingual PDFs and DOCX files into clean UTF-8 TXT files directly in your browser." />
+  <meta property="og:type" content="website" />
+  <title>BhashaLens OCR | Private Indic PDF & DOCX to TXT</title>
+
+  <!-- Open-source browser libraries. Documents are processed locally; no file content is uploaded. -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #102033;
+      --muted: #637085;
+      --soft: #eef4ff;
+      --panel: rgba(255, 255, 255, 0.9);
+      --panel-strong: #ffffff;
+      --line: rgba(93, 108, 132, 0.18);
+      --brand: #2457ff;
+      --brand-2: #7c3aed;
+      --accent: #0891b2;
+      --good: #047857;
+      --warn: #b45309;
+      --bad: #b91c1c;
+      --console: #0f172a;
+      --shadow: 0 24px 80px rgba(15, 23, 42, 0.18);
+      --radius-xl: 28px;
+      --radius-lg: 20px;
+      --radius-md: 14px;
+      --radius-sm: 10px;
+      --ease: cubic-bezier(.2,.8,.2,1);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 12% 10%, rgba(124, 58, 237, 0.20), transparent 28rem),
+        radial-gradient(circle at 86% 3%, rgba(8, 145, 178, 0.18), transparent 24rem),
+        linear-gradient(135deg, #fbfdff 0%, #eef4ff 45%, #f8fafc 100%);
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(36, 87, 255, 0.055) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(36, 87, 255, 0.055) 1px, transparent 1px);
+      background-size: 42px 42px;
+      mask-image: linear-gradient(to bottom, black, transparent 80%);
+    }
+
+    a { color: inherit; }
+
+    button, input, select { font: inherit; }
+
+    .shell {
+      width: min(1180px, calc(100% - 36px));
+      margin: 0 auto;
+      padding: 26px 0 48px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 36px;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      color: #0f172a;
+    }
+
+    .brand-mark {
+      width: 42px;
+      height: 42px;
+      border-radius: 15px;
+      display: grid;
+      place-items: center;
+      color: #fff;
+      background: linear-gradient(135deg, var(--brand), var(--brand-2));
+      box-shadow: 0 12px 30px rgba(36, 87, 255, 0.26);
+    }
+
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .link-button,
+    .primary-button,
+    .ghost-button,
+    .danger-button {
+      border: 0;
+      border-radius: 999px;
+      padding: 11px 16px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-height: 42px;
+      cursor: pointer;
+      text-decoration: none;
+      transition: transform 0.18s var(--ease), box-shadow 0.18s var(--ease), opacity 0.18s var(--ease), background 0.18s var(--ease);
+      white-space: nowrap;
+      font-weight: 750;
+    }
+
+    .primary-button {
+      color: #fff;
+      background: linear-gradient(135deg, var(--brand), var(--brand-2));
+      box-shadow: 0 14px 36px rgba(36, 87, 255, 0.24);
+    }
+
+    .primary-button:hover,
+    .link-button:hover,
+    .ghost-button:hover,
+    .danger-button:hover { transform: translateY(-1px); }
+
+    .primary-button:disabled,
+    .ghost-button:disabled,
+    .danger-button:disabled {
+      opacity: .52;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .link-button,
+    .ghost-button {
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid var(--line);
+      color: #1f2a44;
+    }
+
+    .danger-button {
+      color: var(--bad);
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid rgba(185, 28, 28, 0.18);
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
+      gap: 24px;
+      align-items: stretch;
+      margin-bottom: 24px;
+    }
+
+    .hero-main,
+    .hero-card,
+    .app-card,
+    .info-card {
+      background: var(--panel);
+      border: 1px solid rgba(255, 255, 255, 0.7);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+    }
+
+    .hero-main {
+      padding: clamp(30px, 5vw, 56px);
+      border-radius: var(--radius-xl);
+      overflow: hidden;
+      position: relative;
+    }
+
+    .hero-main::after {
+      content: "";
+      position: absolute;
+      right: -90px;
+      bottom: -110px;
+      width: 270px;
+      height: 270px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(36, 87, 255, 0.16), transparent 68%);
+      pointer-events: none;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--accent);
+      background: rgba(8, 145, 178, 0.10);
+      border: 1px solid rgba(8, 145, 178, 0.12);
+      border-radius: 999px;
+      padding: 7px 12px;
+      font-size: 0.87rem;
+      font-weight: 780;
+    }
+
+    h1 {
+      margin: 22px 0 14px;
+      max-width: 780px;
+      font-size: clamp(2.55rem, 7vw, 5.4rem);
+      line-height: 0.94;
+      letter-spacing: -0.075em;
+    }
+
+    .hero-copy {
+      max-width: 760px;
+      color: #42526a;
+      font-size: clamp(1rem, 1.55vw, 1.18rem);
+      line-height: 1.75;
+      margin: 0;
+    }
+
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 28px;
+    }
+
+    .privacy-strip {
+      margin-top: 26px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: #164e63;
+      background: rgba(236, 254, 255, 0.74);
+      border: 1px solid rgba(8, 145, 178, 0.16);
+      border-radius: 16px;
+      padding: 12px 14px;
+      font-size: 0.95rem;
+      line-height: 1.45;
+    }
+
+    .hero-card {
+      border-radius: var(--radius-xl);
+      padding: 26px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 24px;
+    }
+
+    .script-cloud {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 9px;
+    }
+
+    .script-chip {
+      padding: 12px 9px;
+      border-radius: 15px;
+      background: rgba(255, 255, 255, 0.78);
+      border: 1px solid var(--line);
+      text-align: center;
+      font-weight: 800;
+      color: #263857;
+      box-shadow: 0 8px 26px rgba(15, 23, 42, 0.06);
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+    }
+
+    .metric {
+      border-radius: 18px;
+      padding: 15px;
+      background: #fff;
+      border: 1px solid var(--line);
+    }
+
+    .metric strong {
+      display: block;
+      font-size: 1.5rem;
+      letter-spacing: -0.05em;
+      color: #14213d;
+    }
+
+    .metric span {
+      color: var(--muted);
+      font-size: 0.86rem;
+      line-height: 1.35;
+    }
+
+    .app-card {
+      border-radius: var(--radius-xl);
+      padding: 18px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(320px, 0.64fr);
+      gap: 18px;
+      margin-bottom: 24px;
+    }
+
+    .panel {
+      border-radius: 24px;
+      background: rgba(255, 255, 255, 0.76);
+      border: 1px solid var(--line);
+      padding: 20px;
+    }
+
+    .panel h2,
+    .panel h3,
+    .info-card h2,
+    .info-card h3 {
+      margin: 0 0 10px;
+      letter-spacing: -0.04em;
+      color: #111827;
+    }
+
+    .panel p,
+    .info-card p {
+      color: var(--muted);
+      line-height: 1.62;
+    }
+
+    .drop-zone {
+      min-height: 194px;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      border-radius: 24px;
+      border: 2px dashed rgba(36, 87, 255, 0.42);
+      background:
+        linear-gradient(135deg, rgba(36, 87, 255, 0.07), rgba(124, 58, 237, 0.06)),
+        rgba(255, 255, 255, 0.75);
+      cursor: pointer;
+      transition: border 0.18s var(--ease), background 0.18s var(--ease), transform 0.18s var(--ease);
+      padding: 22px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .drop-zone::before {
+      content: "";
+      position: absolute;
+      inset: 12px;
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.72);
+      pointer-events: none;
+    }
+
+    .drop-zone:hover,
+    .drop-zone.is-dragging {
+      border-color: var(--brand);
+      background: linear-gradient(135deg, rgba(36, 87, 255, 0.12), rgba(124, 58, 237, 0.10));
+      transform: translateY(-1px);
+    }
+
+    .drop-icon {
+      width: 70px;
+      height: 70px;
+      border-radius: 23px;
+      margin: 0 auto 14px;
+      display: grid;
+      place-items: center;
+      font-size: 2rem;
+      color: #fff;
+      background: linear-gradient(135deg, var(--brand), var(--brand-2));
+      box-shadow: 0 16px 34px rgba(36, 87, 255, 0.22);
+    }
+
+    .drop-zone strong { display: block; font-size: 1.08rem; }
+    .drop-zone span { display: block; color: var(--muted); margin-top: 6px; font-size: 0.93rem; }
+    #fileInput { display: none; }
+
+    .section-spacer { height: 18px; }
+
+    .mode-grid,
+    .options-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+
+    .mode-card,
+    .checkbox-card,
+    .option-card {
+      position: relative;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.84);
+      padding: 14px;
+      cursor: pointer;
+      transition: transform 0.18s var(--ease), border 0.18s var(--ease), box-shadow 0.18s var(--ease);
+    }
+
+    .mode-card:hover,
+    .checkbox-card:hover,
+    .option-card:hover { transform: translateY(-1px); }
+
+    .mode-card input,
+    .checkbox-card input,
+    .option-card input {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .mode-card:has(input:checked),
+    .checkbox-card:has(input:checked),
+    .option-card:has(input:checked) {
+      border-color: rgba(36, 87, 255, 0.58);
+      box-shadow: 0 0 0 4px rgba(36, 87, 255, 0.08);
+    }
+
+    .mode-card strong,
+    .checkbox-card strong,
+    .option-card strong { display: block; color: #14213d; margin-bottom: 5px; }
+    .mode-card span,
+    .checkbox-card span,
+    .option-card span { display: block; color: var(--muted); line-height: 1.45; font-size: 0.86rem; }
+
+    .language-tools {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+
+    .preset-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .preset-button {
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.86);
+      border-radius: 999px;
+      padding: 8px 10px;
+      color: #334155;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 740;
+    }
+
+    .language-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      max-height: 250px;
+      overflow: auto;
+      padding: 2px;
+      scrollbar-width: thin;
+    }
+
+    .checkbox-card { padding: 12px; }
+    .checkbox-card strong { font-size: 0.93rem; }
+    .checkbox-card span { font-size: 0.78rem; }
+
+    .advanced-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .field {
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.84);
+      padding: 14px;
+    }
+
+    .field label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      font-weight: 800;
+      color: #14213d;
+      margin-bottom: 8px;
+    }
+
+    .field small { display: block; color: var(--muted); line-height: 1.5; }
+    .field select { width: 100%; border: 1px solid var(--line); border-radius: 12px; padding: 10px; color: var(--ink); background: #fff; }
+
+    .file-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .file-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      padding: 10px 12px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.82);
+      border: 1px solid var(--line);
+    }
+
+    .file-row strong {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      display: block;
+      font-size: 0.92rem;
+    }
+
+    .file-row span { color: var(--muted); font-size: 0.8rem; }
+
+    .status-panel {
+      display: flex;
+      flex-direction: column;
+      min-height: 100%;
+      gap: 14px;
+    }
+
+    .status-box {
+      padding: 16px;
+      border-radius: 18px;
+      background: #fff;
+      border: 1px solid var(--line);
+    }
+
+    .status-line {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 0.9rem;
+      margin-bottom: 12px;
+    }
+
+    .progress-track {
+      height: 12px;
+      border-radius: 999px;
+      background: #e6ecf5;
+      overflow: hidden;
+      border: 1px solid rgba(36, 87, 255, 0.08);
+    }
+
+    .progress-bar {
+      height: 100%;
+      width: 0%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--brand), var(--brand-2));
+      transition: width 0.22s var(--ease);
+    }
+
+    .console {
+      flex: 1;
+      min-height: 410px;
+      max-height: 640px;
+      overflow-y: auto;
+      background: var(--console);
+      border-radius: 20px;
+      color: #dbeafe;
+      padding: 16px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 0.82rem;
+      line-height: 1.55;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06), inset 0 22px 55px rgba(0, 0, 0, 0.22);
+    }
+
+    .log { margin: 0 0 9px; overflow-wrap: anywhere; }
+    .log-time { color: #7890b5; margin-right: 8px; }
+    .log.success { color: #86efac; }
+    .log.info { color: #93c5fd; }
+    .log.warning { color: #fde68a; }
+    .log.error { color: #fca5a5; }
+
+    .action-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 18px;
+      margin-bottom: 24px;
+    }
+
+    .info-card {
+      border-radius: 24px;
+      padding: 24px;
+    }
+
+    .info-card ol,
+    .info-card ul {
+      padding-left: 1.1rem;
+      color: var(--muted);
+      line-height: 1.7;
+      margin: 12px 0 0;
+    }
+
+    .footer {
+      color: var(--muted);
+      text-align: center;
+      line-height: 1.6;
+      font-size: 0.92rem;
+      padding: 10px 0 0;
+    }
+
+    .hidden { display: none !important; }
+
+    @media (max-width: 980px) {
+      .hero,
+      .app-card,
+      .info-grid { grid-template-columns: 1fr; }
+      .console { min-height: 300px; }
+    }
+
+    @media (max-width: 720px) {
+      .shell { width: min(100% - 22px, 1180px); padding-top: 16px; }
+      .topbar { align-items: flex-start; margin-bottom: 20px; }
+      .top-actions { justify-content: flex-start; }
+      .hero-main, .hero-card { padding: 22px; }
+      .mode-grid, .options-grid, .advanced-grid, .language-grid, .metric-grid { grid-template-columns: 1fr; }
+      .language-grid { max-height: none; }
+      .action-row { grid-template-columns: 1fr; }
+      h1 { font-size: clamp(2.35rem, 14vw, 4rem); }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <nav class="topbar" aria-label="Top navigation">
+      <a href="#top" class="brand" aria-label="BhashaLens OCR home">
+        <span class="brand-mark" aria-hidden="true">भ</span>
+        <span>BhashaLens OCR</span>
+      </a>
+      <div class="top-actions">
+        <a id="downloadApp" class="link-button" href="./index.html" download="bhashalens-ocr.html">Download this HTML</a>
+        <a class="link-button" href="#methodology">Methodology</a>
+      </div>
+    </nav>
+
+    <header class="hero" id="top">
+      <section class="hero-main">
+        <span class="eyebrow">Private browser OCR for Indic languages + English</span>
+        <h1>Turn multilingual PDFs into readable TXT.</h1>
+        <p class="hero-copy">
+          BhashaLens OCR converts PDFs and DOCX files into clean UTF-8 text files using a hybrid pipeline:
+          fast embedded-text extraction first, then Tesseract.js OCR when a page is scanned, empty, or likely garbled.
+          Output files keep the original base filename and are bundled into one ZIP for bulk work.
+        </p>
+        <div class="hero-actions">
+          <button class="primary-button" type="button" id="heroChooseButton">Choose documents</button>
+          <a class="ghost-button" href="#app">Start with smart mode</a>
+        </div>
+        <div class="privacy-strip" role="note">
+          <strong>Client-side privacy:</strong>
+          <span>Your documents stay in your browser. No PDF, DOCX, or extracted text is uploaded to a server. The page may fetch public JavaScript and OCR language data from CDNs.</span>
+        </div>
+      </section>
+
+      <aside class="hero-card" aria-label="Supported scripts summary">
+        <div>
+          <h2>Built for mixed-language archives</h2>
+          <p>Choose only the languages present in your documents for better speed and accuracy.</p>
+          <div class="script-cloud" aria-hidden="true">
+            <span class="script-chip">हिन्दी</span>
+            <span class="script-chip">বাংলা</span>
+            <span class="script-chip">ગુજરાતી</span>
+            <span class="script-chip">தமிழ்</span>
+            <span class="script-chip">తెలుగు</span>
+            <span class="script-chip">ಕನ್ನಡ</span>
+            <span class="script-chip">മലയാളം</span>
+            <span class="script-chip">ਪੰਜਾਬੀ</span>
+            <span class="script-chip">English</span>
+          </div>
+        </div>
+        <div class="metric-grid">
+          <div class="metric"><strong>14+</strong><span>Indic and regional language options</span></div>
+          <div class="metric"><strong>ZIP</strong><span>Bulk TXT output with matching names</span></div>
+          <div class="metric"><strong>OCR</strong><span>WASM worker runs in your browser</span></div>
+          <div class="metric"><strong>UTF-8</strong><span>Legible text encoding for Indian scripts</span></div>
+        </div>
+      </aside>
+    </header>
+
+    <main class="app-card" id="app">
+      <section class="panel" aria-labelledby="convert-title">
+        <h2 id="convert-title">1. Add files</h2>
+        <p>Drop PDFs or DOCX files here. For bulk conversion, all successful files are exported together as a ZIP.</p>
+
+        <div class="drop-zone" id="dropZone" tabindex="0" role="button" aria-label="Choose or drop PDF and DOCX files">
+          <div>
+            <div class="drop-icon" aria-hidden="true">📄</div>
+            <strong>Click to browse, or drag files here</strong>
+            <span>Supports .pdf and .docx. Password-protected PDFs cannot be read by the browser.</span>
+          </div>
+        </div>
+        <input id="fileInput" type="file" multiple accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+        <div class="file-list" id="fileList" aria-live="polite"></div>
+
+        <div class="section-spacer"></div>
+        <h2>2. Choose extraction mode</h2>
+        <div class="mode-grid" role="radiogroup" aria-label="Extraction mode">
+          <label class="mode-card">
+            <input type="radio" name="mode" value="smart" checked />
+            <strong>Smart hybrid</strong>
+            <span>Use PDF text when it looks good. OCR only blank or suspicious pages.</span>
+          </label>
+          <label class="mode-card">
+            <input type="radio" name="mode" value="text" />
+            <strong>Fast text only</strong>
+            <span>Best for born-digital PDFs. Fastest, but may keep broken custom-font text.</span>
+          </label>
+          <label class="mode-card">
+            <input type="radio" name="mode" value="ocr" />
+            <strong>Deep OCR every page</strong>
+            <span>Best for scans or corrupted text layers. Slowest and most thorough.</span>
+          </label>
+        </div>
+
+        <div class="section-spacer"></div>
+        <div class="language-tools">
+          <div>
+            <h2>3. Select OCR languages</h2>
+            <p style="margin: 0;">OCR language selection affects Tesseract pages only. Fast text extraction reads embedded Unicode text directly.</p>
+          </div>
+          <div class="preset-row" aria-label="Language presets">
+            <button class="preset-button" type="button" data-preset="hinEng">Hindi + English</button>
+            <button class="preset-button" type="button" data-preset="deva">Devanagari set</button>
+            <button class="preset-button" type="button" data-preset="south">South set</button>
+            <button class="preset-button" type="button" data-preset="allIndic">All Indic</button>
+            <button class="preset-button" type="button" data-preset="clear">Clear</button>
+          </div>
+        </div>
+        <div class="language-grid" id="languageGrid"></div>
+
+        <div class="section-spacer"></div>
+        <h2>4. Advanced OCR settings</h2>
+        <div class="advanced-grid">
+          <div class="field">
+            <label for="scaleSelect">OCR render scale <span id="scaleLabel">2.5x</span></label>
+            <select id="scaleSelect">
+              <option value="1.5">1.5x - faster, lower detail</option>
+              <option value="2" selected>2x - balanced</option>
+              <option value="2.5">2.5x - sharper scans</option>
+              <option value="3">3x - maximum detail, slower</option>
+            </select>
+            <small>Higher values render each PDF page as a larger image before OCR. Use 2.5x or 3x for low-resolution scans.</small>
+          </div>
+          <div class="field">
+            <label for="qualitySelect">Smart fallback sensitivity</label>
+            <select id="qualitySelect">
+              <option value="relaxed">Relaxed - OCR fewer pages</option>
+              <option value="balanced" selected>Balanced - recommended</option>
+              <option value="strict">Strict - OCR more suspicious pages</option>
+            </select>
+            <small>Smart mode checks for empty pages, replacement characters, private-use glyphs, and common mojibake patterns.</small>
+          </div>
+          <label class="option-card">
+            <input type="checkbox" id="enhanceToggle" checked />
+            <strong>Enhance scan image</strong>
+            <span>Applies grayscale and contrast before OCR. Useful for faint photocopies.</span>
+          </label>
+          <label class="option-card">
+            <input type="checkbox" id="pageBreakToggle" checked />
+            <strong>Include page markers</strong>
+            <span>Adds clear page headers so extracted text is easier to audit.</span>
+          </label>
+        </div>
+      </section>
+
+      <aside class="panel status-panel" aria-labelledby="status-title">
+        <div>
+          <h2 id="status-title">Status</h2>
+          <p>Run the batch, then download a ZIP containing one .txt file per input file plus an extraction report.</p>
+        </div>
+        <div class="status-box">
+          <div class="status-line">
+            <span id="statusText">Ready</span>
+            <strong id="progressPercent">0%</strong>
+          </div>
+          <div class="progress-track" aria-hidden="true"><div class="progress-bar" id="progressBar"></div></div>
+        </div>
+        <div class="console" id="consoleOutput" aria-live="polite" aria-label="Processing log">
+          <div class="log info"><span class="log-time">[System]</span>Ready. Add PDF or DOCX files to begin.</div>
+        </div>
+        <div class="action-row">
+          <button class="primary-button" type="button" id="startButton" disabled>Convert to TXT ZIP</button>
+          <button class="danger-button" type="button" id="cancelButton" disabled>Cancel</button>
+        </div>
+        <button class="ghost-button" type="button" id="clearButton" disabled>Clear selected files</button>
+      </aside>
+    </main>
+
+    <section class="info-grid" id="methodology">
+      <article class="info-card">
+        <h2>Methodology</h2>
+        <ol>
+          <li><strong>PDF.js text layer extraction</strong> reads embedded text first and reconstructs lines by page coordinates.</li>
+          <li><strong>Legibility scoring</strong> flags empty pages, replacement symbols, private-use glyphs, and common Indic mojibake.</li>
+          <li><strong>Tesseract.js OCR fallback</strong> renders flagged pages to canvas and recognizes selected languages with a browser worker.</li>
+          <li><strong>UTF-8 TXT export</strong> normalizes spacing and saves each result with the same base filename.</li>
+        </ol>
+      </article>
+      <article class="info-card">
+        <h2>Privacy model</h2>
+        <p><strong>All document processing is client-side.</strong> Your files and extracted text are not exchanged with a server by this app.</p>
+        <p>For first-time OCR use, the browser may download open-source JavaScript, WebAssembly, and Tesseract traineddata from public CDNs. To run in a fully offline environment, self-host those dependencies and update the paths in the HTML.</p>
+      </article>
+      <article class="info-card">
+        <h2>Best results</h2>
+        <ul>
+          <li>Select only the languages actually present in the file.</li>
+          <li>Use Smart hybrid for mixed digital/scanned PDFs.</li>
+          <li>Use Deep OCR for scans, bad fonts, or unreadable embedded text.</li>
+          <li>Increase render scale for old, low-resolution, or photocopied scans.</li>
+        </ul>
+      </article>
+    </section>
+
+    <footer class="footer">
+      <strong>BhashaLens OCR</strong> is a static HTML app for GitHub Pages or local use. Download this HTML from the button above and use it personally without visiting the GitHub website.
+    </footer>
+  </div>
+
+  <script>
+    (() => {
+      'use strict';
+
+      const PDF_WORKER_SRC = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      if (window.pdfjsLib) {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = PDF_WORKER_SRC;
+      }
+
+      const LANGUAGE_OPTIONS = [
+        { code: 'eng', name: 'English', native: 'English' },
+        { code: 'hin', name: 'Hindi', native: 'हिन्दी' },
+        { code: 'asm', name: 'Assamese', native: 'অসমীয়া' },
+        { code: 'ben', name: 'Bengali', native: 'বাংলা' },
+        { code: 'guj', name: 'Gujarati', native: 'ગુજરાતી' },
+        { code: 'kan', name: 'Kannada', native: 'ಕನ್ನಡ' },
+        { code: 'mal', name: 'Malayalam', native: 'മലയാളം' },
+        { code: 'mar', name: 'Marathi', native: 'मराठी' },
+        { code: 'nep', name: 'Nepali', native: 'नेपाली' },
+        { code: 'ori', name: 'Odia', native: 'ଓଡ଼ିଆ' },
+        { code: 'pan', name: 'Punjabi', native: 'ਪੰਜਾਬੀ' },
+        { code: 'san', name: 'Sanskrit', native: 'संस्कृतम्' },
+        { code: 'tam', name: 'Tamil', native: 'தமிழ்' },
+        { code: 'tel', name: 'Telugu', native: 'తెలుగు' },
+        { code: 'urd', name: 'Urdu', native: 'اردو' },
+        { code: 'sin', name: 'Sinhala', native: 'සිංහල' }
+      ];
+
+      const PRESETS = {
+        hinEng: ['eng', 'hin'],
+        deva: ['eng', 'hin', 'mar', 'nep', 'san'],
+        south: ['eng', 'kan', 'mal', 'tam', 'tel'],
+        allIndic: LANGUAGE_OPTIONS.map(language => language.code).filter(code => code !== 'eng').concat('eng'),
+        clear: []
+      };
+
+      const BAD_GLYPH_RE = /[\uFFFD□■�]/g;
+      const PRIVATE_USE_RE = /[\uE000-\uF8FF]/g;
+      const INDIC_MOJIBAKE_RE = /(à¤|à¥|à¦|à§|à¨|à©|àª|à«|à¬|à­|à®|à¯|à°|à±|à²|à³|à´|àµ|à¶|à·|Ã|Â)/i;
+      const CONTROL_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g;
+      const SUPPORTED_EXTENSIONS = new Set(['pdf', 'docx']);
+
+      const elements = {
+        heroChooseButton: document.getElementById('heroChooseButton'),
+        fileInput: document.getElementById('fileInput'),
+        dropZone: document.getElementById('dropZone'),
+        fileList: document.getElementById('fileList'),
+        languageGrid: document.getElementById('languageGrid'),
+        scaleSelect: document.getElementById('scaleSelect'),
+        scaleLabel: document.getElementById('scaleLabel'),
+        qualitySelect: document.getElementById('qualitySelect'),
+        enhanceToggle: document.getElementById('enhanceToggle'),
+        pageBreakToggle: document.getElementById('pageBreakToggle'),
+        consoleOutput: document.getElementById('consoleOutput'),
+        startButton: document.getElementById('startButton'),
+        cancelButton: document.getElementById('cancelButton'),
+        clearButton: document.getElementById('clearButton'),
+        statusText: document.getElementById('statusText'),
+        progressBar: document.getElementById('progressBar'),
+        progressPercent: document.getElementById('progressPercent'),
+        downloadApp: document.getElementById('downloadApp')
+      };
+
+      let selectedFiles = [];
+      let cancelRequested = false;
+      let activeWorker = null;
+      let activeWorkerLangKey = '';
+      let reportLines = [];
+
+      function init() {
+        renderLanguageGrid();
+        setLanguageSelection(PRESETS.hinEng);
+        bindEvents();
+        updateScaleLabel();
+        updateButtons();
+      }
+
+      function bindEvents() {
+        elements.heroChooseButton.addEventListener('click', () => elements.fileInput.click());
+        elements.dropZone.addEventListener('click', () => elements.fileInput.click());
+        elements.dropZone.addEventListener('keydown', event => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            elements.fileInput.click();
+          }
+        });
+
+        elements.fileInput.addEventListener('change', event => {
+          addFiles(event.target.files);
+          elements.fileInput.value = '';
+        });
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+          elements.dropZone.addEventListener(eventName, event => {
+            event.preventDefault();
+            event.stopPropagation();
+            elements.dropZone.classList.add('is-dragging');
+          });
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+          elements.dropZone.addEventListener(eventName, event => {
+            event.preventDefault();
+            event.stopPropagation();
+            elements.dropZone.classList.remove('is-dragging');
+          });
+        });
+
+        elements.dropZone.addEventListener('drop', event => addFiles(event.dataTransfer.files));
+
+        document.querySelectorAll('[data-preset]').forEach(button => {
+          button.addEventListener('click', () => setLanguageSelection(PRESETS[button.dataset.preset] || []));
+        });
+
+        elements.scaleSelect.addEventListener('change', updateScaleLabel);
+        elements.startButton.addEventListener('click', processBatch);
+        elements.cancelButton.addEventListener('click', () => {
+          cancelRequested = true;
+          log('Cancel requested. The current page will finish before the batch stops.', 'warning');
+          elements.cancelButton.disabled = true;
+        });
+        elements.clearButton.addEventListener('click', clearFiles);
+        elements.downloadApp.addEventListener('click', prepareSelfDownload);
+      }
+
+      function renderLanguageGrid() {
+        elements.languageGrid.innerHTML = '';
+        for (const language of LANGUAGE_OPTIONS) {
+          const label = document.createElement('label');
+          label.className = 'checkbox-card';
+          label.innerHTML = `
+            <input type="checkbox" name="ocrLanguage" value="${language.code}" />
+            <strong>${language.native}</strong>
+            <span>${language.name} · ${language.code}</span>
+          `;
+          elements.languageGrid.appendChild(label);
+        }
+      }
+
+      function setLanguageSelection(codes) {
+        const desired = new Set(codes);
+        document.querySelectorAll('input[name="ocrLanguage"]').forEach(input => {
+          input.checked = desired.has(input.value);
+        });
+      }
+
+      function getSelectedLanguages() {
+        return Array.from(document.querySelectorAll('input[name="ocrLanguage"]:checked')).map(input => input.value);
+      }
+
+      function addFiles(fileList) {
+        const incoming = Array.from(fileList || []);
+        const rejected = [];
+        const next = new Map(selectedFiles.map(file => [fileKey(file), file]));
+
+        for (const file of incoming) {
+          const extension = getExtension(file.name);
+          if (!SUPPORTED_EXTENSIONS.has(extension)) {
+            rejected.push(file.name || 'Unnamed file');
+            continue;
+          }
+          next.set(fileKey(file), file);
+        }
+
+        selectedFiles = Array.from(next.values());
+        renderFileList();
+        updateButtons();
+
+        if (incoming.length) {
+          log(`Added ${incoming.length - rejected.length} supported file(s).`, incoming.length - rejected.length ? 'info' : 'warning');
+        }
+        if (rejected.length) {
+          log(`Skipped unsupported file(s): ${rejected.map(escapeHtml).join(', ')}`, 'warning', true);
+        }
+      }
+
+      function clearFiles() {
+        selectedFiles = [];
+        renderFileList();
+        updateButtons();
+        resetProgress('Ready', 0);
+        resetConsole();
+      }
+
+      function renderFileList() {
+        elements.fileList.innerHTML = '';
+        if (!selectedFiles.length) return;
+
+        selectedFiles.forEach(file => {
+          const row = document.createElement('div');
+          row.className = 'file-row';
+          row.innerHTML = `
+            <div>
+              <strong title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</strong>
+              <span>${getExtension(file.name).toUpperCase()} · ${formatBytes(file.size)}</span>
+            </div>
+            <span>${safeBaseName(file.name)}.txt</span>
+          `;
+          elements.fileList.appendChild(row);
+        });
+      }
+
+      function updateButtons() {
+        elements.startButton.disabled = !selectedFiles.length;
+        elements.clearButton.disabled = !selectedFiles.length;
+      }
+
+      function setBusy(isBusy) {
+        elements.startButton.disabled = isBusy || !selectedFiles.length;
+        elements.clearButton.disabled = isBusy || !selectedFiles.length;
+        elements.cancelButton.disabled = !isBusy;
+        elements.heroChooseButton.disabled = isBusy;
+        elements.fileInput.disabled = isBusy;
+        document.querySelectorAll('button[data-preset], input, select').forEach(control => {
+          if (control.id !== 'fileInput') control.disabled = isBusy;
+        });
+      }
+
+      function updateScaleLabel() {
+        elements.scaleLabel.textContent = `${Number(elements.scaleSelect.value).toFixed(1).replace('.0', '')}x`;
+      }
+
+      function readSettings() {
+        const languages = getSelectedLanguages();
+        const mode = document.querySelector('input[name="mode"]:checked')?.value || 'smart';
+        return {
+          mode,
+          languages,
+          scale: Number(elements.scaleSelect.value) || 2,
+          quality: elements.qualitySelect.value,
+          enhance: elements.enhanceToggle.checked,
+          pageBreaks: elements.pageBreakToggle.checked
+        };
+      }
+
+      async function processBatch() {
+        const settings = readSettings();
+        const requiresOcr = settings.mode !== 'text';
+        if (requiresOcr && settings.languages.length === 0) {
+          log('Select at least one OCR language, or choose Fast text only mode.', 'error');
+          return;
+        }
+        const hasPdf = selectedFiles.some(file => getExtension(file.name) === 'pdf');
+        const hasDocx = selectedFiles.some(file => getExtension(file.name) === 'docx');
+        if (!window.JSZip || (hasPdf && !window.pdfjsLib) || (hasDocx && !window.mammoth) || (requiresOcr && !window.Tesseract)) {
+          log('One or more required browser libraries failed to load. Check your internet connection or self-host the dependencies.', 'error');
+          return;
+        }
+
+        cancelRequested = false;
+        setBusy(true);
+        resetConsole();
+        resetProgress('Preparing batch', 0);
+        reportLines = buildReportHeader(settings);
+
+        const zip = new JSZip();
+        const usedNames = new Map();
+        let completed = 0;
+        let createdTextFiles = 0;
+
+        try {
+          log(`Batch started: ${selectedFiles.length} file(s), mode: ${settings.mode}.`, 'info');
+          if (requiresOcr) {
+            log(`OCR languages: ${settings.languages.join('+')}. Select fewer languages for faster, cleaner OCR.`, 'info');
+          }
+
+          for (const file of selectedFiles) {
+            if (cancelRequested) throw new Error('Processing cancelled by user.');
+            completed += 1;
+            const extension = getExtension(file.name);
+            const baseName = safeBaseName(file.name);
+            const outName = uniqueZipName(`${baseName}.txt`, usedNames);
+            resetProgress(`Processing ${file.name}`, Math.round(((completed - 1) / selectedFiles.length) * 100));
+            log(`Reading ${escapeHtml(file.name)}...`, 'info', true);
+
+            try {
+              let text = '';
+              if (extension === 'pdf') {
+                text = await processPdf(file, settings, completed, selectedFiles.length);
+              } else if (extension === 'docx') {
+                text = await processDocx(file);
+              }
+
+              const cleaned = cleanExtractedText(text);
+              if (!cleaned.trim()) {
+                log(`No text found in ${escapeHtml(file.name)}. A blank TXT was still created for filename parity.`, 'warning', true);
+                reportLines.push(`WARN\t${file.name}\tNo text found; blank TXT created.`);
+              } else {
+                reportLines.push(`OK\t${file.name}\t${outName}\t${countCharacters(cleaned)} characters`);
+              }
+              zip.file(outName, '\ufeff' + cleaned);
+              createdTextFiles += 1;
+              log(`Created ${escapeHtml(outName)}.`, 'success', true);
+            } catch (fileError) {
+              const message = fileError && fileError.message ? fileError.message : String(fileError);
+              reportLines.push(`ERROR\t${file.name}\t${message}`);
+              log(`Failed ${escapeHtml(file.name)}: ${escapeHtml(message)}`, 'error', true);
+            }
+          }
+
+          if (!createdTextFiles) {
+            throw new Error('No TXT files were created. Check the log for file-level errors.');
+          }
+
+          zip.file('_BhashaLens_Extraction_Report.txt', reportLines.join('\n'));
+          resetProgress('Building ZIP download', 96);
+          const zipBlob = await zip.generateAsync({ type: 'blob' }, metadata => {
+            resetProgress(`Building ZIP download (${Math.round(metadata.percent)}%)`, 96 + Math.round(metadata.percent * 0.04));
+          });
+          const zipName = `bhashalens_txt_export_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.zip`;
+          downloadBlob(zipName, zipBlob);
+          resetProgress('Complete', 100);
+          log(`Done. Downloaded ${escapeHtml(zipName)} with ${createdTextFiles} TXT file(s).`, 'success', true);
+        } catch (error) {
+          const message = error && error.message ? error.message : String(error);
+          resetProgress(cancelRequested ? 'Cancelled' : 'Stopped', cancelRequested ? 0 : 100);
+          log(message, cancelRequested ? 'warning' : 'error');
+        } finally {
+          await terminateWorker();
+          setBusy(false);
+          updateButtons();
+        }
+      }
+
+      async function processDocx(file) {
+        const arrayBuffer = await file.arrayBuffer();
+        const result = await mammoth.extractRawText({ arrayBuffer });
+        if (result.messages && result.messages.length) {
+          for (const message of result.messages) {
+            log(`DOCX note: ${escapeHtml(message.message || message.type || 'Mammoth message')}`, 'warning', true);
+          }
+        }
+        return result.value || '';
+      }
+
+      async function processPdf(file, settings, fileIndex, fileTotal) {
+        const data = new Uint8Array(await file.arrayBuffer());
+        const pdf = await pdfjsLib.getDocument({ data, useSystemFonts: true }).promise;
+        const chunks = [];
+        log(`PDF loaded: ${pdf.numPages} page(s).`, 'info');
+
+        for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+          if (cancelRequested) throw new Error('Processing cancelled by user.');
+          const progressWithinBatch = ((fileIndex - 1) / fileTotal) + ((pageNumber - 1) / pdf.numPages / fileTotal);
+          resetProgress(`Page ${pageNumber} of ${pdf.numPages}`, Math.round(progressWithinBatch * 94));
+
+          const page = await pdf.getPage(pageNumber);
+          let pageText = '';
+          let method = 'embedded text';
+          let quality = null;
+
+          if (settings.mode !== 'ocr') {
+            pageText = await extractPdfTextLayer(page);
+            quality = scoreTextQuality(pageText, settings.quality);
+          }
+
+          const shouldOcr = settings.mode === 'ocr' || (settings.mode === 'smart' && shouldUseOcr(quality));
+          if (shouldOcr) {
+            method = settings.mode === 'ocr' ? 'OCR forced' : `OCR fallback: ${quality.reason}`;
+            pageText = await ocrPdfPage(page, settings, pageNumber, pdf.numPages);
+          }
+
+          const cleanedPageText = cleanExtractedText(pageText);
+          chunks.push(formatPageText(pageNumber, method, cleanedPageText, settings.pageBreaks));
+          reportLines.push(`PAGE\t${file.name}\t${pageNumber}\t${method}\t${countCharacters(cleanedPageText)} characters`);
+          page.cleanup();
+        }
+
+        return chunks.join('\n\n');
+      }
+
+      async function extractPdfTextLayer(page) {
+        const textContent = await page.getTextContent({ disableCombineTextItems: false });
+        const items = textContent.items
+          .filter(item => item && typeof item.str === 'string' && item.str.trim())
+          .map(item => ({
+            text: item.str,
+            x: Number(item.transform && item.transform[4]) || 0,
+            y: Number(item.transform && item.transform[5]) || 0,
+            width: Number(item.width) || 0
+          }));
+
+        if (!items.length) return '';
+
+        items.sort((a, b) => Math.abs(b.y - a.y) > 4 ? b.y - a.y : a.x - b.x);
+        const lines = [];
+        for (const item of items) {
+          let line = lines.find(candidate => Math.abs(candidate.y - item.y) <= 4);
+          if (!line) {
+            line = { y: item.y, items: [] };
+            lines.push(line);
+          }
+          line.items.push(item);
+        }
+
+        lines.sort((a, b) => b.y - a.y);
+        return lines.map(line => {
+          line.items.sort((a, b) => a.x - b.x);
+          let text = '';
+          let previousEnd = null;
+          for (const item of line.items) {
+            if (previousEnd !== null && item.x - previousEnd > 7) text += ' ';
+            text += item.text;
+            previousEnd = item.x + item.width;
+          }
+          return text.replace(/[ \t]+/g, ' ').trim();
+        }).filter(Boolean).join('\n');
+      }
+
+      function scoreTextQuality(text, sensitivity) {
+        const normalized = (text || '').replace(/\s+/g, ' ').trim();
+        const length = countCharacters(normalized);
+        const badGlyphs = countMatches(normalized, BAD_GLYPH_RE);
+        const privateUse = countMatches(normalized, PRIVATE_USE_RE);
+        const controls = countMatches(normalized, CONTROL_RE);
+        const mojibake = INDIC_MOJIBAKE_RE.test(normalized);
+        const nonWhitespace = normalized.replace(/\s/g, '').length || 1;
+        const badRatio = (badGlyphs + privateUse + controls) / nonWhitespace;
+        const thresholds = {
+          relaxed: { minChars: 8, badRatio: 0.035, privateUse: 0.10 },
+          balanced: { minChars: 18, badRatio: 0.020, privateUse: 0.06 },
+          strict: { minChars: 35, badRatio: 0.012, privateUse: 0.03 }
+        }[sensitivity] || { minChars: 18, badRatio: 0.020, privateUse: 0.06 };
+
+        let reason = 'embedded text accepted';
+        if (length < thresholds.minChars) reason = 'little or no embedded text';
+        else if (mojibake) reason = 'possible Indic mojibake';
+        else if (badRatio > thresholds.badRatio) reason = 'high bad-glyph ratio';
+        else if ((privateUse / nonWhitespace) > thresholds.privateUse) reason = 'private-use font glyphs';
+
+        return { length, badRatio, privateUseRatio: privateUse / nonWhitespace, mojibake, reason, thresholds };
+      }
+
+      function shouldUseOcr(quality) {
+        if (!quality) return true;
+        return quality.reason !== 'embedded text accepted';
+      }
+
+      async function ocrPdfPage(page, settings, pageNumber, totalPages) {
+        const worker = await getWorker(settings);
+        log(`OCR page ${pageNumber}/${totalPages} at ${settings.scale}x render scale...`, 'warning');
+        const canvas = await renderPageToCanvas(page, settings.scale, settings.enhance);
+        try {
+          const result = await worker.recognize(canvas);
+          return result && result.data && result.data.text ? result.data.text : '';
+        } finally {
+          canvas.width = 0;
+          canvas.height = 0;
+        }
+      }
+
+      async function renderPageToCanvas(page, scale, enhance) {
+        const viewport = page.getViewport({ scale });
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d', { willReadFrequently: !!enhance });
+        const outputScale = window.devicePixelRatio || 1;
+        canvas.width = Math.floor(viewport.width * outputScale);
+        canvas.height = Math.floor(viewport.height * outputScale);
+        canvas.style.width = `${Math.floor(viewport.width)}px`;
+        canvas.style.height = `${Math.floor(viewport.height)}px`;
+
+        context.save();
+        context.fillStyle = '#ffffff';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.restore();
+
+        const transform = outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null;
+        await page.render({ canvasContext: context, viewport, transform }).promise;
+        if (enhance) enhanceCanvasForOcr(canvas, context);
+        return canvas;
+      }
+
+      function enhanceCanvasForOcr(canvas, context) {
+        const image = context.getImageData(0, 0, canvas.width, canvas.height);
+        const data = image.data;
+        const contrast = 1.18;
+        const intercept = 128 * (1 - contrast);
+        for (let i = 0; i < data.length; i += 4) {
+          const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+          const adjusted = Math.max(0, Math.min(255, gray * contrast + intercept));
+          data[i] = adjusted;
+          data[i + 1] = adjusted;
+          data[i + 2] = adjusted;
+          data[i + 3] = 255;
+        }
+        context.putImageData(image, 0, 0);
+      }
+
+      async function getWorker(settings) {
+        const langKey = settings.languages.slice().sort().join('+');
+        if (activeWorker && activeWorkerLangKey === langKey) return activeWorker;
+        await terminateWorker();
+
+        log(`Loading Tesseract.js OCR worker (${langKey}). First run may download language data.`, 'info');
+        activeWorker = await Tesseract.createWorker(settings.languages, 1, {
+          logger: message => {
+            if (!message || typeof message.progress !== 'number') return;
+            const pct = Math.round(message.progress * 100);
+            const status = message.status ? message.status.replace(/_/g, ' ') : 'OCR';
+            elements.statusText.textContent = `${status} ${pct}%`;
+          }
+        });
+        activeWorkerLangKey = langKey;
+
+        await activeWorker.setParameters({
+          preserve_interword_spaces: '1',
+          user_defined_dpi: String(Math.round(settings.scale * 120))
+        });
+        return activeWorker;
+      }
+
+      async function terminateWorker() {
+        if (activeWorker) {
+          try {
+            await activeWorker.terminate();
+          } catch (error) {
+            console.warn('Unable to terminate Tesseract worker cleanly:', error);
+          }
+          activeWorker = null;
+          activeWorkerLangKey = '';
+        }
+      }
+
+      function formatPageText(pageNumber, method, text, includePageBreaks) {
+        if (!includePageBreaks) return text;
+        return `===== Page ${pageNumber} · ${method} =====\n${text}`;
+      }
+
+      function cleanExtractedText(text) {
+        return (text || '')
+          .normalize('NFC')
+          .replace(/\r\n?/g, '\n')
+          .replace(/\u00A0/g, ' ')
+          .replace(/[\t ]+\n/g, '\n')
+          .replace(/\n[\t ]+/g, '\n')
+          .replace(/[ \t]{2,}/g, ' ')
+          .replace(/\n{4,}/g, '\n\n\n')
+          .trim();
+      }
+
+      function buildReportHeader(settings) {
+        return [
+          'BhashaLens OCR Extraction Report',
+          `Generated\t${new Date().toISOString()}`,
+          `Mode\t${settings.mode}`,
+          `OCR languages\t${settings.languages.join('+') || 'none'}`,
+          `OCR render scale\t${settings.scale}x`,
+          `Enhance image\t${settings.enhance ? 'yes' : 'no'}`,
+          '',
+          'Record\tSource\tPage or output\tMethod or detail\tCharacters'
+        ];
+      }
+
+      function prepareSelfDownload() {
+        const clone = document.documentElement.cloneNode(true);
+        const clonedConsole = clone.querySelector('#consoleOutput');
+        if (clonedConsole) {
+          clonedConsole.innerHTML = '<div class="log info"><span class="log-time">[System]</span>Ready. Add PDF or DOCX files to begin.</div>';
+        }
+        const clonedFileList = clone.querySelector('#fileList');
+        if (clonedFileList) clonedFileList.innerHTML = '';
+        const clonedProgress = clone.querySelector('#progressBar');
+        if (clonedProgress) clonedProgress.style.width = '0%';
+        const clonedStatus = clone.querySelector('#statusText');
+        if (clonedStatus) clonedStatus.textContent = 'Ready';
+        const clonedPercent = clone.querySelector('#progressPercent');
+        if (clonedPercent) clonedPercent.textContent = '0%';
+        const clonedDownloadLink = clone.querySelector('#downloadApp');
+        if (clonedDownloadLink) {
+          clonedDownloadLink.setAttribute('href', './index.html');
+          clonedDownloadLink.setAttribute('download', 'bhashalens-ocr.html');
+        }
+
+        const html = '<!DOCTYPE html>\n' + clone.outerHTML;
+        const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+        const previousHref = elements.downloadApp.href;
+        const objectUrl = URL.createObjectURL(blob);
+        elements.downloadApp.href = objectUrl;
+        elements.downloadApp.download = 'bhashalens-ocr.html';
+        setTimeout(() => {
+          URL.revokeObjectURL(objectUrl);
+          elements.downloadApp.href = previousHref;
+        }, 4000);
+      }
+
+      function resetConsole() {
+        elements.consoleOutput.innerHTML = '<div class="log info"><span class="log-time">[System]</span>Ready. Processing log will appear here.</div>';
+      }
+
+      function log(message, type = '', allowHtml = false) {
+        const div = document.createElement('div');
+        div.className = `log ${type}`.trim();
+        const time = new Date().toLocaleTimeString([], { hour12: false });
+        div.innerHTML = `<span class="log-time">[${time}]</span>${allowHtml ? message : escapeHtml(message)}`;
+        elements.consoleOutput.appendChild(div);
+        elements.consoleOutput.scrollTop = elements.consoleOutput.scrollHeight;
+      }
+
+      function resetProgress(status, percent) {
+        const safePercent = Math.max(0, Math.min(100, Number(percent) || 0));
+        elements.statusText.textContent = status;
+        elements.progressBar.style.width = `${safePercent}%`;
+        elements.progressPercent.textContent = `${safePercent}%`;
+      }
+
+      function getExtension(name) {
+        const match = String(name || '').toLowerCase().match(/\.([^.]+)$/);
+        return match ? match[1] : '';
+      }
+
+      function fileKey(file) {
+        return `${file.name}::${file.size}::${file.lastModified}`;
+      }
+
+      function safeBaseName(fileName) {
+        const withoutExtension = String(fileName || 'document').replace(/\.[^/.]+$/, '');
+        const cleaned = withoutExtension.replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').replace(/\s+/g, ' ').trim();
+        return (cleaned || 'document').slice(0, 150);
+      }
+
+      function uniqueZipName(name, usedNames) {
+        const normalized = name || 'document.txt';
+        const count = usedNames.get(normalized) || 0;
+        usedNames.set(normalized, count + 1);
+        if (count === 0) return normalized;
+        const dot = normalized.lastIndexOf('.');
+        const base = dot === -1 ? normalized : normalized.slice(0, dot);
+        const extension = dot === -1 ? '' : normalized.slice(dot);
+        return `${base}_${count + 1}${extension}`;
+      }
+
+      function downloadBlob(filename, blob) {
+        const anchor = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        anchor.href = url;
+        anchor.download = filename;
+        anchor.style.display = 'none';
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }
+
+      function countCharacters(text) {
+        return Array.from(text || '').length;
+      }
+
+      function countMatches(text, regex) {
+        const matches = text.match(regex);
+        return matches ? matches.length : 0;
+      }
+
+      function formatBytes(bytes) {
+        if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+        const units = ['B', 'KB', 'MB', 'GB'];
+        const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+        return `${(bytes / Math.pow(1024, index)).toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      }
+
+      init();
+    })();
+  </script>
+</body>
+</html>
